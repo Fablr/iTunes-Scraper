@@ -79,6 +79,11 @@ class PodcastScraper(BaseScraper):
         if 200 == page_result.status_code:
             html = BeautifulSoup(page_result.content)
             content = html.find(id="selectedcontent")
+
+            if content is None:
+                logging.error("unable to find content from {0}".format(self.url))
+                raise IOError
+
             links = content.find_all('a')
 
             for link in links:
