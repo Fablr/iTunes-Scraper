@@ -7,6 +7,7 @@ import requests
 import string
 import logging
 import re
+import time
 
 CATEGORIES = {
     'arts': "https://itunes.apple.com/us/genre/podcasts-arts/id1301?",
@@ -30,12 +31,20 @@ CATEGORIES = {
 FORMULA = "&letter={0}&page={1}"
 ITUNES = "https://itunes.apple.com/lookup?id={0}"
 
+SECONDS_BETWEEN_REQUESTS = 0.5
+
 class BaseScraper(metaclass=ABCMeta):
-    @abstractmethod
     def __init__(self, url):
         self.url = url
         self.children = []
         return
+
+    def __iter__(self):
+        self.iter = iter(self.children)
+        return self.iter
+
+    def next(self):
+        return next(self.iter)
 
     @abstractmethod
     def scrap(self):
@@ -43,7 +52,7 @@ class BaseScraper(metaclass=ABCMeta):
 
 class CategoryScraper(BaseScraper):
     def __init__(self, url):
-        BaseScraper.__init__(url)
+        super(CategoryScraper, self).__init__(url)
         return
 
     def scrap(self):
@@ -70,7 +79,7 @@ class CategoryScraper(BaseScraper):
 
 class PodcastScraper(BaseScraper):
     def __init__(self, url):
-        BaseScraper.__init__(url)
+        super(PodcastScraper, self).__init__(url)
         return
 
     def scrap(self):
@@ -125,3 +134,30 @@ class PodcastScraper(BaseScraper):
         else:
             logging.warning("status code {0} from {1}".format(page_result.status_code, self.url))
         return
+
+def store_feed(feed):
+    f = open('feeds.txt', 'a')
+    f.write(feed)
+    return
+
+def async_main():
+    pass
+
+def serial_main():
+    for category in CATEGORIES:
+        category_scraper = CategoryScraper(category)
+        category_scraper.scrap()
+
+        for url in category_scraper:
+            podcast_scraper = PodcastScraper(url)
+            podcast_scraper.scrap()
+
+            for feed in podcast_scraper:
+                time.sleep(SECONDS_BETWEEN_REQUESTS)
+                store_feed(feed)
+
+            time.sleep(SECONDS_BETWEEN_REQUESTS)
+    return
+
+if __name__ == "__main__":
+    serial_main()
