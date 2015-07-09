@@ -8,6 +8,7 @@ import string
 import logging
 import re
 import time
+import sys
 
 CATEGORIES = {
     'arts': "https://itunes.apple.com/us/genre/podcasts-arts/id1301?",
@@ -47,7 +48,7 @@ class BaseScraper(metaclass=ABCMeta):
         return next(self.iter)
 
     @abstractmethod
-    def scrap(self):
+    def scrape(self):
         pass
 
 class CategoryScraper(BaseScraper):
@@ -55,8 +56,8 @@ class CategoryScraper(BaseScraper):
         super(CategoryScraper, self).__init__(url)
         return
 
-    def scrap(self):
-        for letter in string.uppercase[:26]:
+    def scrape(self):
+        for letter in string.ascii_uppercase[:26]:
             url = self.url + FORMULA.format(letter, 1)
             result = requests.get(url)
 
@@ -64,7 +65,7 @@ class CategoryScraper(BaseScraper):
                 logging.warning("status code {0} from {1}".format(result.status_code, url))
                 continue
 
-            html = BeautifulSoup(result.content)
+            html = BeautifulSoup(result.content, "html.parser")
             pagination = html.find('ul', 'paginate')
 
             if pagination is None:
@@ -82,11 +83,11 @@ class PodcastScraper(BaseScraper):
         super(PodcastScraper, self).__init__(url)
         return
 
-    def scrap(self):
+    def scrape(self):
         page_result = requests.get(self.url)
 
         if 200 == page_result.status_code:
-            html = BeautifulSoup(page_result.content)
+            html = BeautifulSoup(page_result.content, "html.parser")
             content = html.find(id="selectedcontent")
 
             if content is None:
@@ -97,40 +98,44 @@ class PodcastScraper(BaseScraper):
 
             for link in links:
                 podcast_url = link.attrs['href']
-                match = re.match('/id(\d+)$', podcast_url)
+                match = re.findall('id(\d+)$', podcast_url)
 
                 if match is None:
                     logging.warning("unable to parse id from {0}".format(podcast_url))
                     continue
 
-                url = ITUNES.format(match.group(1))
-                api_result = requests.get(url)
+                url = ITUNES.format(match[0])
+                try:
+                    api_result = requests.get(url)
 
-                if 200 != api_result.status_code:
-                    logging.warning("status code {0} from {1}".format(api_result.status_code, url))
-                    continue
-
-                json = api_result.json()
-
-                if 'resultCount' not in json or 'results' not in json:
-                    logging.warning("no results from {0}".format(url))
-                    continue
-
-                size = json['resultCount']
-
-                for i in range(0, size):
-                    current = json['results'][i]
-
-                    if 'feedUrl' not in current:
-                        logging.warning("no feed in result {0} from {1}".format(i, url))
+                    if 200 != api_result.status_code:
+                        logging.warning("status code {0} from {1}".format(api_result.status_code, url))
                         continue
 
-                    feed_url = json['results'][i]['feedUrl']
+                    json = api_result.json()
 
-                    if isinstance(feed_url, unicode):
-                        feed_url = feed_url.encode('UTF-8')
+                    if 'resultCount' not in json or 'results' not in json:
+                        logging.warning("no results from {0}".format(url))
+                        continue
 
-                    self.children.append(feed_url)
+                    size = json['resultCount']
+
+                    for i in range(0, size):
+                        current = json['results'][i]
+
+                        if 'feedUrl' not in current:
+                            logging.warning("no feed in result {0} from {1}".format(i, url))
+                            continue
+
+                        feed_url = json['results'][i]['feedUrl']
+
+                    #if isinstance(feed_url, str):
+                    #    feed_url = feed_url.encode('UTF-8')
+
+                        self.children.append(feed_url)
+                except: 
+                    print(url, "failed. Unexpected error: ", sys.exc_info()[0])
+                    pass
         else:
             logging.warning("status code {0} from {1}".format(page_result.status_code, self.url))
         return
@@ -138,6 +143,7 @@ class PodcastScraper(BaseScraper):
 def store_feed(feed):
     f = open('feeds.txt', 'a')
     f.write(feed)
+    f.write('\r\n')
     return
 
 def async_main():
@@ -145,12 +151,12 @@ def async_main():
 
 def serial_main():
     for category in CATEGORIES:
-        category_scraper = CategoryScraper(category)
-        category_scraper.scrap()
+        category_scraper = CategoryScraper(CATEGORIES[category])
+        category_scraper.scrape()
 
         for url in category_scraper:
             podcast_scraper = PodcastScraper(url)
-            podcast_scraper.scrap()
+            podcast_scraper.scrape()
 
             for feed in podcast_scraper:
                 time.sleep(SECONDS_BETWEEN_REQUESTS)
