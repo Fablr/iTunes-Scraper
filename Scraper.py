@@ -59,6 +59,7 @@ class CategoryScraper(BaseScraper):
     def scrape(self):
         for letter in string.ascii_uppercase[:26]:
             url = self.url + FORMULA.format(letter, 1)
+            logging.info("requesting url, {0}".format(url))
             result = requests.get(url)
 
             if 200 != result.status_code:
@@ -84,6 +85,7 @@ class PodcastScraper(BaseScraper):
         return
 
     def scrape(self):
+        logging.info("requesting url, {0}".format(self.url))
         page_result = requests.get(self.url)
 
         if 200 == page_result.status_code:
@@ -98,6 +100,9 @@ class PodcastScraper(BaseScraper):
 
             for link in links:
                 podcast_url = link.attrs['href']
+                podcast_name = link.getText()
+                logging.info("podcast name, {0}".format(podcast_name))
+
                 match = re.findall('id(\d+)$', podcast_url)
 
                 if match is None:
@@ -105,37 +110,34 @@ class PodcastScraper(BaseScraper):
                     continue
 
                 url = ITUNES.format(match[0])
-                try:
-                    api_result = requests.get(url)
+                api_result = requests.get(url)
 
-                    if 200 != api_result.status_code:
-                        logging.warning("status code {0} from {1}".format(api_result.status_code, url))
+                if 200 != api_result.status_code:
+                    logging.warning("status code {0} from {1}".format(api_result.status_code, url))
+                    continue
+
+                json = api_result.json()
+
+                if 'resultCount' not in json or 'results' not in json:
+                    logging.warning("no results from {0}".format(url))
+                    continue
+
+                size = json['resultCount']
+
+                for i in range(0, size):
+                    current = json['results'][i]
+
+                    if 'feedUrl' not in current:
+                        logging.warning("no feed in result {0} from {1}".format(i, url))
                         continue
 
-                    json = api_result.json()
+                    feed_url = json['results'][i]['feedUrl']
 
-                    if 'resultCount' not in json or 'results' not in json:
-                        logging.warning("no results from {0}".format(url))
-                        continue
+                #if isinstance(feed_url, str):
+                #    feed_url = feed_url.encode('UTF-8')
 
-                    size = json['resultCount']
-
-                    for i in range(0, size):
-                        current = json['results'][i]
-
-                        if 'feedUrl' not in current:
-                            logging.warning("no feed in result {0} from {1}".format(i, url))
-                            continue
-
-                        feed_url = json['results'][i]['feedUrl']
-
-                    #if isinstance(feed_url, str):
-                    #    feed_url = feed_url.encode('UTF-8')
-
-                        self.children.append(feed_url)
-                except: 
-                    print(url, "failed. Unexpected error: ", sys.exc_info()[0])
-                    pass
+                    logging.info("podcast feed, {0}".format(feed_url))
+                    self.children.append(feed_url)
         else:
             logging.warning("status code {0} from {1}".format(page_result.status_code, self.url))
         return
@@ -151,19 +153,22 @@ def async_main():
 
 def serial_main():
     for category in CATEGORIES:
+        logging.info("category, {0}".format(category))
         category_scraper = CategoryScraper(CATEGORIES[category])
         category_scraper.scrape()
 
         for url in category_scraper:
+            logging.info("page, {0}".format(url))
             podcast_scraper = PodcastScraper(url)
             podcast_scraper.scrape()
 
             for feed in podcast_scraper:
-                time.sleep(SECONDS_BETWEEN_REQUESTS)
+                logging.info("feed, {0}".format(feed))
                 store_feed(feed)
 
             time.sleep(SECONDS_BETWEEN_REQUESTS)
     return
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, filename='log.txt')
     serial_main()
