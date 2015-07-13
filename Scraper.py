@@ -3,12 +3,14 @@ __publisher__ = 'Fabler'
 
 from abc import ABCMeta, abstractmethod
 from bs4 import BeautifulSoup
+from corgi_cache import CorgiCache
 import requests
 import string
 import logging
 import re
 import time
-from corgi_cache import CorgiCache
+import sys
+import getopt
 
 CATEGORIES = {
     'arts': "https://itunes.apple.com/us/genre/podcasts-arts/id1301?",
@@ -32,7 +34,7 @@ CATEGORIES = {
 FORMULA = "&letter={0}&page={1}"
 ITUNES = "https://itunes.apple.com/lookup?id={0}"
 
-SECONDS_BETWEEN_REQUESTS = 0.5
+SECONDS_BETWEEN_REQUESTS = 0.1
 
 class BaseScraper(metaclass=ABCMeta):
     def __init__(self, url):
@@ -61,6 +63,7 @@ class CategoryScraper(BaseScraper):
             url = self.url + FORMULA.format(letter, 1)
             logging.info("requesting url, {0}".format(url))
             result = requests.get(url)
+            time.sleep(SECONDS_BETWEEN_REQUESTS)
 
             if 200 != result.status_code:
                 logging.warning("status code {0} from {1}".format(result.status_code, url))
@@ -88,6 +91,7 @@ class PodcastScraper(BaseScraper):
     def scrape(self):
         logging.info("requesting url, {0}".format(self.url))
         page_result = requests.get(self.url)
+        time.sleep(SECONDS_BETWEEN_REQUESTS)
 
         if 200 != page_result.status_code:
             logging.warning("status code {0} from {1}".format(page_result.status_code, self.url))
@@ -120,6 +124,7 @@ class PodcastScraper(BaseScraper):
 
             url = ITUNES.format(match[0])
             api_result = requests.get(url)
+            time.sleep(SECONDS_BETWEEN_REQUESTS)
 
             if 200 != api_result.status_code:
                 logging.warning("status code {0} from {1}".format(api_result.status_code, url))
@@ -156,36 +161,69 @@ class PodcastScraper(BaseScraper):
                 break
         return
 
-def store_feed(feed):
-    f = open('feeds.txt', 'a')
-    f.write(feed)
-    f.write('\r\n')
+def usage():
+    print("usage: python Scraper.py [-h,--help] [-v,--verbose,--debug]")
+    print("       [-d,--daemon] [-l,--log <path>]")
     return
 
 def async_main():
     pass
 
-def serial_main():
+def serial_main(argv):
+    verbose = False
+    debug = False
+    daemon = False
+    log_file = "log.txt"
+    level = logging.WARNING
+
+    try:
+        opts, args = getopt.getopt(argv, "hvdl:", ["help", "verbose", "daemon", "log=", "debug"])
+    except getopt.GetoptError:
+        usage()
+        sys.exit(2)
+
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            usage()
+            sys.exit()
+        elif opt in ("-v", "--verbose"):
+            verbose = True
+        elif opt in ("-d", "--daemon"):
+            daemon = True
+        elif opt in ("-l", "--log"):
+            log_file = arg
+        elif opt == "debug":
+            debug = True
+
+    if verbose:
+        level = logging.INFO
+
+    if debug:
+        level = logging.DEBUG
+
+    logging.basicConfig(level=level, filename=log_file)
+
     cache = CorgiCache()
 
-    for category in CATEGORIES:
-        logging.info("category, {0}".format(category))
-        category_scraper = CategoryScraper(CATEGORIES[category])
-        category_scraper.scrape()
+    while True:
+        for category in CATEGORIES:
+            logging.info("category, {0}".format(category))
+            category_scraper = CategoryScraper(CATEGORIES[category])
+            category_scraper.scrape()
 
-        for url in category_scraper:
-            logging.info("page, {0}".format(url))
-            podcast_scraper = PodcastScraper(url=url, validator=cache.feed_id_exists)
-            podcast_scraper.scrape()
+            for url in category_scraper:
+                logging.info("page, {0}".format(url))
+                podcast_scraper = PodcastScraper(url=url, validator=cache.feed_id_exists)
+                podcast_scraper.scrape()
 
-            cache.put_feed_batch(list(podcast_scraper))
+                cache.put_feed_batch(list(podcast_scraper))
 
-            for feed in podcast_scraper:
-                logging.info("feed, {0}".format(feed))
+                for feed in podcast_scraper:
+                    logging.info("feed, {0}".format(feed))
 
-            time.sleep(SECONDS_BETWEEN_REQUESTS)
+        if not daemon:
+            break
     return
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, filename='log.txt')
-    serial_main()
+    serial_main(argv=sys.argv[1:])
