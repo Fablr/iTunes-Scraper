@@ -1,5 +1,5 @@
 __author__ = 'Chris Day'
-__publisher__ = 'Fabler LLC'
+__publisher__ = 'Fabler'
 
 from abc import ABCMeta, abstractmethod
 from bs4 import BeautifulSoup
@@ -8,7 +8,7 @@ import string
 import logging
 import re
 import time
-import sys
+from corgi_cache import CorgiCache
 
 CATEGORIES = {
     'arts': "https://itunes.apple.com/us/genre/podcasts-arts/id1301?",
@@ -80,66 +80,80 @@ class CategoryScraper(BaseScraper):
 
 
 class PodcastScraper(BaseScraper):
-    def __init__(self, url):
+    def __init__(self, url, validator):
         super(PodcastScraper, self).__init__(url)
+        self.validator = validator
         return
 
     def scrape(self):
         logging.info("requesting url, {0}".format(self.url))
         page_result = requests.get(self.url)
 
-        if 200 == page_result.status_code:
-            html = BeautifulSoup(page_result.content, "html.parser")
-            content = html.find(id="selectedcontent")
-
-            if content is None:
-                logging.error("unable to find content from {0}".format(self.url))
-                raise IOError
-
-            links = content.find_all('a')
-
-            for link in links:
-                podcast_url = link.attrs['href']
-                podcast_name = link.getText()
-                logging.info("podcast name, {0}".format(podcast_name))
-
-                match = re.findall('id(\d+)$', podcast_url)
-
-                if match is None:
-                    logging.warning("unable to parse id from {0}".format(podcast_url))
-                    continue
-
-                url = ITUNES.format(match[0])
-                api_result = requests.get(url)
-
-                if 200 != api_result.status_code:
-                    logging.warning("status code {0} from {1}".format(api_result.status_code, url))
-                    continue
-
-                json = api_result.json()
-
-                if 'resultCount' not in json or 'results' not in json:
-                    logging.warning("no results from {0}".format(url))
-                    continue
-
-                size = json['resultCount']
-
-                for i in range(0, size):
-                    current = json['results'][i]
-
-                    if 'feedUrl' not in current:
-                        logging.warning("no feed in result {0} from {1}".format(i, url))
-                        continue
-
-                    feed_url = json['results'][i]['feedUrl']
-
-                #if isinstance(feed_url, str):
-                #    feed_url = feed_url.encode('UTF-8')
-
-                    logging.info("podcast feed, {0}".format(feed_url))
-                    self.children.append(feed_url)
-        else:
+        if 200 != page_result.status_code:
             logging.warning("status code {0} from {1}".format(page_result.status_code, self.url))
+            raise IOError
+
+        html = BeautifulSoup(page_result.content, "html.parser")
+        content = html.find(id="selectedcontent")
+
+        if content is None:
+            logging.error("unable to find content from {0}".format(self.url))
+            raise IOError
+
+        links = content.find_all('a')
+
+        for link in links:
+            podcast_url = link.attrs['href']
+            podcast_name = link.getText()
+            logging.info("podcast name, {0}".format(podcast_name))
+
+            match = re.findall('id(\d+)$', podcast_url)
+
+            if match is None:
+                logging.warning("unable to parse id from {0}".format(podcast_url))
+                continue
+
+            # check to see if we already got a feed for this id
+            #
+            if self.validator(match[0]):
+                continue
+
+            url = ITUNES.format(match[0])
+            api_result = requests.get(url)
+
+            if 200 != api_result.status_code:
+                logging.warning("status code {0} from {1}".format(api_result.status_code, url))
+                continue
+
+            json = api_result.json()
+
+            if 'resultCount' not in json or 'results' not in json:
+                logging.warning("no results from {0}".format(url))
+                continue
+
+            size = json['resultCount']
+
+            if 1 != size:
+                logging.warning("potentially lost data for id {0}".format(match[0]))
+
+            for i in range(0, size):
+                current = json['results'][i]
+
+                if 'feedUrl' not in current:
+                    logging.warning("no feed in result {0} from {1}".format(i, url))
+                    continue
+
+                feed_url = json['results'][i]['feedUrl']
+
+                logging.info("podcast feed, {0}".format(feed_url))
+                feed = {'URL': feed_url,
+                        'ID': match[0]}
+                self.children.append(feed)
+
+                # Stop looping we found a feed url for this id and
+                # we logged if this ID had multiple results
+                #
+                break
         return
 
 def store_feed(feed):
@@ -152,6 +166,8 @@ def async_main():
     pass
 
 def serial_main():
+    cache = CorgiCache()
+
     for category in CATEGORIES:
         logging.info("category, {0}".format(category))
         category_scraper = CategoryScraper(CATEGORIES[category])
@@ -159,12 +175,13 @@ def serial_main():
 
         for url in category_scraper:
             logging.info("page, {0}".format(url))
-            podcast_scraper = PodcastScraper(url)
+            podcast_scraper = PodcastScraper(url=url, validator=cache.feed_id_exists)
             podcast_scraper.scrape()
+
+            cache.put_feed_batch(list(podcast_scraper))
 
             for feed in podcast_scraper:
                 logging.info("feed, {0}".format(feed))
-                store_feed(feed)
 
             time.sleep(SECONDS_BETWEEN_REQUESTS)
     return
