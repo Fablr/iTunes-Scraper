@@ -36,6 +36,7 @@ ITUNES = "https://itunes.apple.com/lookup?id={0}"
 
 SECONDS_BETWEEN_REQUESTS = 0.1
 
+
 class BaseScraper(metaclass=ABCMeta):
     def __init__(self, url):
         self.url = url
@@ -52,6 +53,7 @@ class BaseScraper(metaclass=ABCMeta):
     @abstractmethod
     def scrape(self):
         pass
+
 
 class CategoryScraper(BaseScraper):
     def __init__(self, url):
@@ -161,13 +163,16 @@ class PodcastScraper(BaseScraper):
                 break
         return
 
+
 def usage():
     print("usage: python Scraper.py [-h,--help] [-v,--verbose,--debug]")
     print("       [-d,--daemon] [-l,--log <path>]")
     return
 
+
 def async_main():
     pass
+
 
 def serial_main(argv):
     verbose = False
@@ -224,6 +229,7 @@ def serial_main(argv):
         if not daemon:
             break
     return
+
 
 if __name__ == "__main__":
     serial_main(argv=sys.argv[1:])
