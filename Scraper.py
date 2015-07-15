@@ -174,12 +174,37 @@ def async_main():
     pass
 
 
-def serial_main(argv):
+def serial_main(daemon_mode):
+    cache = CorgiCache()
+
+    while True:
+        for category in CATEGORIES:
+            logging.info("category, {0}".format(category))
+            category_scraper = CategoryScraper(CATEGORIES[category])
+            category_scraper.scrape()
+
+            for url in category_scraper:
+                logging.info("page, {0}".format(url))
+                podcast_scraper = PodcastScraper(url=url, validator=cache.feed_id_exists)
+                podcast_scraper.scrape()
+
+                cache.put_feed_batch(list(podcast_scraper))
+
+                for feed in podcast_scraper:
+                    logging.info("feed, {0}".format(feed))
+
+        if not daemon_mode:
+            break
+    return
+
+
+if __name__ == "__main__":
     verbose = False
     debug = False
     daemon = False
     log_file = "log.txt"
     level = logging.WARNING
+    argv = sys.argv[1:]
 
     try:
         opts, args = getopt.getopt(argv, "hvdl:", ["help", "verbose", "daemon", "log=", "debug"])
@@ -208,28 +233,4 @@ def serial_main(argv):
 
     logging.basicConfig(level=level, filename=log_file)
 
-    cache = CorgiCache()
-
-    while True:
-        for category in CATEGORIES:
-            logging.info("category, {0}".format(category))
-            category_scraper = CategoryScraper(CATEGORIES[category])
-            category_scraper.scrape()
-
-            for url in category_scraper:
-                logging.info("page, {0}".format(url))
-                podcast_scraper = PodcastScraper(url=url, validator=cache.feed_id_exists)
-                podcast_scraper.scrape()
-
-                cache.put_feed_batch(list(podcast_scraper))
-
-                for feed in podcast_scraper:
-                    logging.info("feed, {0}".format(feed))
-
-        if not daemon:
-            break
-    return
-
-
-if __name__ == "__main__":
-    serial_main(argv=sys.argv[1:])
+    serial_main(daemon_mode=daemon)
