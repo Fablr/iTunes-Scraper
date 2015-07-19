@@ -34,7 +34,7 @@ CATEGORIES = {
 FORMULA = "&letter={0}&page={1}"
 ITUNES = "https://itunes.apple.com/lookup?id={0}"
 
-SECONDS_BETWEEN_REQUESTS = 0.1
+SECONDS_BETWEEN_REQUESTS = 0.25
 
 
 class BaseScraper(metaclass=ABCMeta):
@@ -61,7 +61,10 @@ class CategoryScraper(BaseScraper):
         return
 
     def scrape(self):
-        for letter in string.ascii_uppercase[:26]:
+        letters = string.ascii_uppercase[:26]
+        letters += '*'
+
+        for letter in letters:
             url = self.url + FORMULA.format(letter, 1)
             logging.info("requesting url, {0}".format(url))
             result = requests.get(url)
@@ -119,9 +122,11 @@ class PodcastScraper(BaseScraper):
                 logging.warning("unable to parse id from {0}".format(podcast_url))
                 continue
 
+            podcast_id = int(match[0])
+
             # check to see if we already got a feed for this id
             #
-            if self.validator(match[0]):
+            if self.validator(podcast_id):
                 continue
 
             url = ITUNES.format(match[0])
@@ -154,8 +159,12 @@ class PodcastScraper(BaseScraper):
 
                 logging.info("podcast feed, {0}".format(feed_url))
                 feed = {'URL': feed_url,
-                        'ID': match[0]}
-                self.children.append(feed)
+                        'ID': podcast_id}
+
+                if 0 == len(list(filter(lambda child: child['ID'] == podcast_id, self.children))):
+                    self.children.append(feed)
+                else:
+                    logging.info("duplicate id in children, {0}".format(podcast_id))
 
                 # Stop looping we found a feed url for this id and
                 # we logged if this ID had multiple results
