@@ -1,14 +1,13 @@
 #!/bin/bash
+xcode-select --install
 ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
-brew install python3
-brew install unixodbc
-brew install freetds --with-unixodbc
-export WORKON_HOME=$HOME/.virtualenvs
-mkdir -p $WORKON_HOME
-source /usr/local/bin/virtualenvwrapper.sh
-mkvirtualenv --python=/usr/local/bin/python3 VFABLER_ITUNESSCRAPER
-pip install virtualenv
-pip install virtualenvwrapper
-echo source ~/.bashrc >> ~/.profile
-echo source /usr/local/bin/virtualenvwrapper.sh >> ~/.bashrc
-echo export WORKON_HOME=$HOME/.virtualenvs >> ~/.bashrc
+brew install pyenv
+brew install pyenv-virtualenv
+pyenv install 3.4.3
+pyenv rehash
+echo 'eval "$(pyenv init -)"' >> ~/.bash_profile
+echo 'eval "$(pyenv virtualenv-init -)"' >> ~/.bash_profile
+exec $SHELL
+pyenv global 3.4.3
+pyenv virtualenv VFABLER_ITUNESCRAPER
+pip install -r requirements.txt
