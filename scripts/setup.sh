@@ -10,4 +10,5 @@ echo 'eval "$(pyenv virtualenv-init -)"' >> ~/.bash_profile
 exec $SHELL
 pyenv global 3.4.3
 pyenv virtualenv VFABLER_ITUNESCRAPER
+pyenv activate VFABLER_ITUNESCRAPER
 pip install -r requirements.txt
